@@ -1,0 +1,90 @@
+From 1cc878c5e4b0fa238dcbd23ddc1e1b4f7ee0d702 Mon Sep 17 00:00:00 2001
+From: Yaroslav Hryhorenko <yarik13371337@gmail.com>
+Date: Tue, 24 Nov 2026 19:58:33 +0200
+Subject: [PATCH 2/3] pi_stress: bind each thread to its CPU itself on QNX
+
+QNX has no run-mask thread attribute, so the thread sets its own affinity
+after it starts instead of passing it through pthread_attr_setaffinity_np().
+---
+ src/pi_tests/pi_stress.c | 31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/src/pi_tests/pi_stress.c b/src/pi_tests/pi_stress.c
+index 500b10d..609fcdb 100644
+--- a/src/pi_tests/pi_stress.c
++++ b/src/pi_tests/pi_stress.c
+@@ -241,12 +241,14 @@ setup_thread_attr(pthread_attr_t *attr, struct sched_attr *sa,
+ 		     status);
+ 		return FAILURE;
+ 	}
++#ifndef __QNX__
+ 	status = pthread_attr_setaffinity_np(attr, sizeof(cpu_set_t), mask);
+ 	if (status) {
+ 		pi_error("%s: setting affinity attribute: 0x%x\n", __func__,
+ 			 status);
+ 		return FAILURE;
+ 	}
++#endif /* QNX has no thread attribute for the run mask: threads bind themselves, see bind_to_group_cpu() */
+ 
+ 	/*
+ 	 * The pthread API does not yet support SCHED_DEADLINE, defer the
+@@ -388,6 +390,20 @@ int pending_interrupt(void)
+  *   1. report progress
+  *   2. check for deadlocks
+  */
++#ifdef __QNX__
++/* First thing each group thread does: run only on the CPU of its group. */
++static int bind_to_group_cpu(long cpu)
++{
++	cpu_set_t mask;
++
++	CPU_ZERO(&mask);
++	CPU_SET(cpu, &mask);
++	return sched_setaffinity(0, sizeof(cpu_set_t), &mask);
++}
++#else
++#define bind_to_group_cpu(cpu) 0
++#endif
++
+ void *reporter(void *arg)
+ {
+ 	int status;
+@@ -494,6 +510,11 @@ void *low_priority(void *arg)
+ 	pthread_mutex_t *loop_mtx = &p->loop_mtx;
+ 	int *loop = &p->loop;
+ 
++	if (bind_to_group_cpu(p->cpu)) {
++		pi_error("low_priority[%d]: binding to cpu %ld failed\n", p->id, p->cpu);
++		return NULL;
++	}
++
+ 	allow_sigterm();
+ 
+ 	if (verify_cpu(p->cpu) != SUCCESS) {
+@@ -630,6 +651,11 @@ void *med_priority(void *arg)
+ 	pthread_mutex_t *loop_mtx = &p->loop_mtx;
+ 	int *loop = &p->loop;
+ 
++	if (bind_to_group_cpu(p->cpu)) {
++		pi_error("med_priority[%d]: binding to cpu %ld failed\n", p->id, p->cpu);
++		return NULL;
++	}
++
+ 	allow_sigterm();
+ 
+ 	if (verify_cpu(p->cpu) != SUCCESS) {
+@@ -757,6 +783,11 @@ void *high_priority(void *arg)
+ 		}
+ 	}
+ 
++	if (bind_to_group_cpu(p->cpu)) {
++		pi_error("high_priority[%d]: binding to cpu %ld failed\n", p->id, p->cpu);
++		return NULL;
++	}
++
+ 	allow_sigterm();
+ 	if (verify_cpu(p->cpu) != SUCCESS) {
+ 		pi_error("high_priority[%d]: not bound to %ld\n", p->id, p->cpu);
+-- 
+2.50.1 (Apple Git-155)
+

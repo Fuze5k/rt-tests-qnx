@@ -1,0 +1,39 @@
+From 9dc7ae66d8477b42882817d3ef2d5b2c369d0176 Mon Sep 17 00:00:00 2001
+From: Yaroslav Hryhorenko <yarik13371337@gmail.com>
+Date: Tue, 24 Nov 2026 19:58:33 +0200
+Subject: [PATCH 3/3] ptsematest: hand the lock over with semaphores on QNX
+
+The test unlocks a mutex from a thread that did not lock it. A QNX mutex can
+only be unlocked by its owner, so the call fails and the test measures
+nothing. Binary semaphores do the same hand-off and work on QNX.
+---
+ src/ptsematest/ptsematest.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/ptsematest/ptsematest.c b/src/ptsematest/ptsematest.c
+index fddebc8..0b7f0ac 100644
+--- a/src/ptsematest/ptsematest.c
++++ b/src/ptsematest/ptsematest.c
+@@ -26,6 +26,19 @@
+ #include "rt-get_cpu.h"
+ #include "rt-error.h"
+ 
++#ifdef __QNX__
++/*
++ * The test hands a lock from one thread to another. A QNX mutex can only be
++ * unlocked by the thread that locked it, so the hand-off uses semaphores.
++ */
++#include <semaphore.h>
++#define pthread_mutex_t sem_t
++#define pthread_mutex_init(m, attr) sem_init(m, 0, 1)
++#define pthread_mutex_lock(m) sem_wait(m)
++#define pthread_mutex_unlock(m) sem_post(m)
++#define pthread_mutex_destroy(m) sem_destroy(m)
++#endif
++
+ enum {
+ 	AFFINITY_UNSPECIFIED,
+ 	AFFINITY_SPECIFIED,
+-- 
+2.50.1 (Apple Git-155)
+

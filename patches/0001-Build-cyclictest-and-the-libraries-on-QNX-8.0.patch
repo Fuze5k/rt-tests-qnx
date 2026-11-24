@@ -1,0 +1,282 @@
+From 17f2ba8142e0da9926c404e6f9ed07bdc94cfb49 Mon Sep 17 00:00:00 2001
+From: Yaroslav Hryhorenko <yarik13371337@gmail.com>
+Date: Tue, 24 Nov 2026 19:58:33 +0200
+Subject: [PATCH 1/3] Build cyclictest and the libraries on QNX 8.0
+
+QNX has no SCHED_DEADLINE (sched_setattr/getattr return ENOSYS), no
+RLIMIT_RTPRIO, /proc/loadavg, /proc/cpuinfo or /dev/cpu_dma_latency, and no
+getcpu(). SIGEV_THREAD_ID maps to SIGEV_SIGNAL_THREAD, SCHED_OTHER runs at
+priority 10 as there is no priority 0, and pip_stress passes -1 as the file
+descriptor of its anonymous mapping, which QNX requires.
+---
+ src/cyclictest/cyclictest.c           | 40 ++++++++++++++++++++++++++-
+ src/include/rt-get_cpu.h              |  4 +--
+ src/lib/rt-get_cpu.c                  |  4 +--
+ src/lib/rt-sched.c                    | 17 ++++++++++++
+ src/lib/rt-utils.c                    |  2 ++
+ src/pi_tests/pip_stress.c             |  2 +-
+ src/rt-migrate-test/rt-migrate-test.c |  4 +++
+ 7 files changed, 67 insertions(+), 6 deletions(-)
+
+diff --git a/src/cyclictest/cyclictest.c b/src/cyclictest/cyclictest.c
+index 58b56bc..5b6dd19 100644
+--- a/src/cyclictest/cyclictest.c
++++ b/src/cyclictest/cyclictest.c
+@@ -57,7 +57,9 @@
+ #define CLOCK_AUX 16
+ #endif
+ 
++#ifndef __QNX__
+ #define sigev_notify_thread_id _sigev_un._tid
++#endif
+ 
+ #ifdef __UCLIBC__
+ #define MAKE_PROCESS_CPUCLOCK(pid, clock) \
+@@ -255,6 +257,7 @@ static char shm_name[SHM_BUF_SIZE];
+  *
+  * Documentation/power/pm_qos_interface.txt
+  */
++#ifndef __QNX__
+ static void set_latency_target(void)
+ {
+ 	struct stat s;
+@@ -298,6 +301,7 @@ static void set_latency_target(void)
+ 	}
+ 	printf("# /dev/cpu_dma_latency set to %dus\n", latency_target_value);
+ }
++#endif
+ 
+ #ifdef HAVE_LIBCPUPOWER_SUPPORT
+ static unsigned int **saved_cpu_idle_disable_state;
+@@ -475,6 +479,11 @@ static int raise_soft_prio(int policy, const struct sched_param *param)
+ 	int prio;
+ 	struct rlimit rlim;
+ 
++#ifdef __QNX__
++	/* no RLIMIT_RTPRIO: QNX gates real-time priorities with abilities, not rlimits */
++	(void)err; (void)policy_max; (void)soft_max; (void)hard_max; (void)prio; (void)rlim;
++	return -1;
++#else
+ 	prio = param->sched_priority;
+ 
+ 	policy_max = sched_get_priority_max(policy);
+@@ -509,6 +518,7 @@ static int raise_soft_prio(int policy, const struct sched_param *param)
+ 	}
+ 
+ 	return err;
++#endif /* __QNX__ */
+ }
+ 
+ /*
+@@ -519,6 +529,14 @@ static int raise_soft_prio(int policy, const struct sched_param *param)
+ static int setscheduler(pid_t pid, int policy, const struct sched_param *param)
+ {
+ 	int err = 0;
++#ifdef __QNX__
++	/* QNX has no priority 0: SCHED_OTHER threads run at the default priority 10 */
++	struct sched_param qnx_param = *param;
++
++	if (policy == SCHED_OTHER && qnx_param.sched_priority == 0)
++		qnx_param.sched_priority = 10;
++	param = &qnx_param;
++#endif
+ 
+ try_again:
+ 	err = sched_setscheduler(pid, policy, param);
+@@ -682,7 +700,9 @@ static void *timerthread(void *param)
+ 	if (par->mode == MODE_CYCLIC) {
+ 		sigev.sigev_notify = SIGEV_THREAD_ID | SIGEV_SIGNAL;
+ 		sigev.sigev_signo = par->signal;
++#ifndef __QNX__
+ 		sigev.sigev_notify_thread_id = stat->tid;
++#endif
+ 		if (timer_create(par->clock, &sigev, &timer))
+ 			fatal("timerthread%d: failed to create timer for clock %d, errno: %d\n",
+ 			      par->cpu, par->clock, errno);
+@@ -1475,6 +1495,7 @@ static void process_options(int argc, char *argv[], int max_cpus)
+ 	}
+ }
+ 
++#ifndef __QNX__
+ static int check_timer(void)
+ {
+ 	struct timespec ts;
+@@ -1484,6 +1505,7 @@ static int check_timer(void)
+ 
+ 	return (ts.tv_sec != 0 || ts.tv_nsec != 1);
+ }
++#endif
+ 
+ static void sighand(int sig)
+ {
+@@ -1996,8 +2018,10 @@ int main(int argc, char **argv)
+ 			goto out;
+ 		}
+ 
++#ifndef __QNX__
+ 	/* use the /dev/cpu_dma_latency trick if it's there */
+ 	set_latency_target();
++#endif
+ 
+ 	if (deepest_idle_state >= -1) {
+ 		if (!have_libcpupower_support()) {
+@@ -2022,8 +2046,14 @@ int main(int argc, char **argv)
+ 	if (tracelimit && trace_marker)
+ 		enable_trace_mark();
+ 
++#ifdef __QNX__
++	/* QNX has no hrtimer switch; the kernel clock period sets the timer granularity */
++	if (!quiet)
++		printf("# QNX clock period: %ld us\n", qnx_clock_period_ns() / 1000);
++#else
+ 	if (check_timer())
+ 		warn("High resolution timers not available\n");
++#endif
+ 
+ 	if (check_clock_resolution) {
+ 		uint64_t diff;
+@@ -2271,7 +2301,10 @@ int main(int argc, char **argv)
+ 
+ 	while (!shutdown) {
+ 		char lavg[256];
+-		int fd, len, allstopped = 0;
++		#ifndef __QNX__
++		int fd, len;
++#endif
++		int allstopped = 0;
+ 		static char *policystr = NULL;
+ 		static char *slash = NULL;
+ 		static char *policystr2;
+@@ -2287,10 +2320,15 @@ int main(int argc, char **argv)
+ 				slash = policystr2 = "";
+ 		}
+ 		if (!verbose && !quiet) {
++#ifdef __QNX__
++			/* no /proc/loadavg on QNX */
++			strcpy(lavg, "n/a");
++#else
+ 			fd = open("/proc/loadavg", O_RDONLY, 0666);
+ 			len = read(fd, &lavg, 255);
+ 			close(fd);
+ 			lavg[len-1] = 0x0;
++#endif
+ 			printf("policy: %s%s%s: loadavg: %s          \n\n",
+ 			       policystr, slash, policystr2, lavg);
+ 		}
+diff --git a/src/include/rt-get_cpu.h b/src/include/rt-get_cpu.h
+index 74bf8f0..84d66c4 100644
+--- a/src/include/rt-get_cpu.h
++++ b/src/include/rt-get_cpu.h
+@@ -20,8 +20,8 @@ static inline int get_cpu(void)
+         s = syscall(__NR_getcpu, &c, NULL, NULL);
+         return (s == -1) ? s : c;
+ }
+-#elif defined(__GLIBC__) && defined(__GLIBC_MINOR__)	\
+-	&& __GLIBC__>=2 && __GLIBC_MINOR__>=6
++#elif defined(__QNX__) || (defined(__GLIBC__) && defined(__GLIBC_MINOR__)	\
++	&& __GLIBC__>=2 && __GLIBC_MINOR__>=6)
+ #include <utmpx.h>
+ static inline int get_cpu_setup(void) { return 0; }
+ static inline int get_cpu(void) { return sched_getcpu(); }
+diff --git a/src/lib/rt-get_cpu.c b/src/lib/rt-get_cpu.c
+index 608cd9b..30da6b9 100644
+--- a/src/lib/rt-get_cpu.c
++++ b/src/lib/rt-get_cpu.c
+@@ -4,8 +4,8 @@
+  */
+ #include "rt-get_cpu.h"
+ #ifdef __NR_getcpu
+-#elif defined(__GLIBC__) && defined(__GLIBC_MINOR__)	\
+-	&& __GLIBC__>=2 && __GLIBC_MINOR__>=6
++#elif defined(__QNX__) || (defined(__GLIBC__) && defined(__GLIBC_MINOR__)	\
++	&& __GLIBC__>=2 && __GLIBC_MINOR__>=6)
+ #else
+ int (*get_cpu)(void);
+ int (*get_cpu_vdsop)(unsigned int *, unsigned int *, void *);
+diff --git a/src/lib/rt-sched.c b/src/lib/rt-sched.c
+index 8023bc7..37b488e 100644
+--- a/src/lib/rt-sched.c
++++ b/src/lib/rt-sched.c
+@@ -14,6 +14,22 @@
+ 
+ #include "rt-sched.h"
+ 
++#ifdef __QNX__
++/* QNX has no SCHED_DEADLINE: report ENOSYS the way an old Linux kernel does. */
++#include <errno.h>
++int sched_setattr(pid_t pid, const struct sched_attr *attr, unsigned int flags)
++{
++	errno = ENOSYS;
++	return -1;
++}
++
++int sched_getattr(pid_t pid, struct sched_attr *attr, unsigned int size,
++		  unsigned int flags)
++{
++	errno = ENOSYS;
++	return -1;
++}
++#else
+ int sched_setattr(pid_t pid,
+ 		  const struct sched_attr *attr,
+ 		  unsigned int flags)
+@@ -28,3 +44,4 @@ int sched_getattr(pid_t pid,
+ {
+ 	return syscall(__NR_sched_getattr, pid, attr, size, flags);
+ }
++#endif /* __QNX__ */
+diff --git a/src/lib/rt-utils.c b/src/lib/rt-utils.c
+index aa70c78..6f04d91 100644
+--- a/src/lib/rt-utils.c
++++ b/src/lib/rt-utils.c
+@@ -288,10 +288,12 @@ uint32_t string_to_policy(const char *str)
+ 	return 0;
+ }
+ 
++#ifndef __QNX__
+ pid_t gettid(void)
+ {
+ 	return syscall(SYS_gettid);
+ }
++#endif /* __QNX__: gettid() comes from qnx-compat */
+ 
+ /*
+  * parse an input value as a base10 value followed by an optional
+diff --git a/src/pi_tests/pip_stress.c b/src/pi_tests/pip_stress.c
+index 9bd225f..9c4c28d 100644
+--- a/src/pi_tests/pip_stress.c
++++ b/src/pi_tests/pip_stress.c
+@@ -244,7 +244,7 @@ void *mmap_page(void)
+ 	void *mptr;
+ 	long pgsize = sysconf(_SC_PAGE_SIZE);
+ 
+-	mptr = mmap(NULL, pgsize, PROTRW, MMAP_FLAGS, 0, 0);
++	mptr = mmap(NULL, pgsize, PROTRW, MMAP_FLAGS, -1, 0);
+ 	if (mptr == MAP_FAILED) {
+ 		perror("In function mmap_page - mmap");
+ 		exit(1);
+diff --git a/src/rt-migrate-test/rt-migrate-test.c b/src/rt-migrate-test/rt-migrate-test.c
+index c33df58..61dc91f 100644
+--- a/src/rt-migrate-test/rt-migrate-test.c
++++ b/src/rt-migrate-test/rt-migrate-test.c
+@@ -515,6 +515,9 @@ static void stop_log(int sig)
+ 
+ static int count_cpus(void)
+ {
++#ifdef __QNX__
++	return qnx_num_cpus();	/* no /proc/cpuinfo on QNX */
++#else
+ 	FILE *fp;
+ 	char buf[2048];
+ 	int cpus = 0;
+@@ -544,6 +547,7 @@ static int count_cpus(void)
+ 	fclose(fp);
+ 
+ 	return cpus;
++#endif
+ }
+ 
+ int main (int argc, char **argv)
+-- 
+2.50.1 (Apple Git-155)
+

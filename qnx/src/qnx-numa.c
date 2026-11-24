@@ -10,7 +10,7 @@
 
 int numa_available(void)
 {
-	return -1;       /* no NUMA: rt-tests then runs its non-NUMA paths */
+	return 0;        /* libnuma "works": one node, every CPU on it */
 }
 
 static struct bitmask *bitmask_alloc(unsigned int nbits)

@@ -1,0 +1,103 @@
+=== run 1: idle system
+--- cyclictest SCHED_FIFO p80
+T: 0 (    2) P:80 I:1000 C:    500 Min:      4 Act:  428 Avg: 1106 Max:    5214
+--- cyclictest 2 threads, -a
+T: 0 (    2) P:80 I:1000 C:    300 Min:      6 Act: 1584 Avg: 1036 Max:    2152
+T: 1 (    3) P:80 I:1500 C:    247 Min:     10 Act: 1146 Avg: 1282 Max:    2582
+--- msglat msg
+RT:0 (    1) P:80 I:1000 C:   1000 Min:     10 Act:     22 Avg:     40 Max:     526
+OW:0 (    1) P:80 I:1000 C:   1000 Min:      4 Act:      8 Avg:     15 Max:     234
+--- msglat pulse
+OW:0 (    1) P:80 I:1000 C:   1001 Min:      5 Act:     36 Avg:     46 Max:    1326
+--- msglat event
+OW:0 (    1) P:80 I:1000 C:   1001 Min:      0 Act:      0 Avg:   1147 Max:    3406
+--- msglat --pi    (server below client, spinner between, same CPU)
+RT:0 (    1) P:80 I:1000 C:    300 Min:      8 Act:     16 Avg:     14 Max:      42
+OW:0 (    1) P:80 I:1000 C:    300 Min:      3 Act:      8 Avg:      6 Max:      24
+--- msglat --no-pi (same, _NTO_CHF_FIXED_PRIORITY)
+RT:0 (    1) P:80 I:1000 C:    300 Min:      8 Act:      8 Avg:    879 Max:   20126
+OW:0 (    1) P:80 I:1000 C:    300 Min:      4 Act:      4 Avg:    874 Max:   20087
+=== run 1: 2 busy loops at priority 10
+--- cyclictest SCHED_FIFO p80
+T: 0 (    2) P:80 I:1000 C:    500 Min:      4 Act:  554 Avg: 1157 Max:    1900
+--- cyclictest SCHED_OTHER
+T: 0 (    2) P: 0 I:1000 C:    500 Min:      7 Act:  718 Avg: 3224 Max:   10638
+=== run 2: idle system
+--- cyclictest SCHED_FIFO p80
+T: 0 (    2) P:80 I:1000 C:    500 Min:      8 Act: 1264 Avg: 1515 Max:    2308
+--- cyclictest 2 threads, -a
+T: 0 (    2) P:80 I:1000 C:    300 Min:      9 Act:  665 Avg:  974 Max:    3256
+T: 1 (    3) P:80 I:1500 C:    209 Min:    598 Act: 1588 Avg: 1507 Max:    3734
+--- msglat msg
+RT:0 (    1) P:80 I:1000 C:   1000 Min:     11 Act:     78 Avg:     37 Max:    2478
+OW:0 (    1) P:80 I:1000 C:   1000 Min:      4 Act:     30 Avg:     15 Max:    2040
+--- msglat pulse
+OW:0 (    1) P:80 I:1000 C:   1001 Min:      4 Act:     28 Avg:     33 Max:     112
+--- msglat event
+OW:0 (    1) P:80 I:1000 C:   1001 Min:      0 Act:      0 Avg:   1173 Max:    7316
+--- msglat --pi    (server below client, spinner between, same CPU)
+RT:0 (    1) P:80 I:1000 C:    300 Min:      8 Act:     10 Avg:     15 Max:      87
+OW:0 (    1) P:80 I:1000 C:    300 Min:      4 Act:      4 Avg:      7 Max:      49
+--- msglat --no-pi (same, _NTO_CHF_FIXED_PRIORITY)
+RT:0 (    1) P:80 I:1000 C:    300 Min:      8 Act:     22 Avg:    939 Max:   20131
+OW:0 (    1) P:80 I:1000 C:    300 Min:      4 Act:     16 Avg:    934 Max:   20109
+=== run 2: 2 busy loops at priority 10
+--- cyclictest SCHED_FIFO p80
+T: 0 (    2) P:80 I:1000 C:    500 Min:      7 Act:  911 Avg:  815 Max:    1578
+--- cyclictest SCHED_OTHER
+T: 0 (    2) P: 0 I:1000 C:    500 Min:      7 Act: 4194 Avg: 3537 Max:   11313
+=== run 3: idle system
+--- cyclictest SCHED_FIFO p80
+T: 0 (    2) P:80 I:1000 C:    500 Min:      5 Act:  961 Avg:  982 Max:    3993
+--- cyclictest 2 threads, -a
+T: 0 (    2) P:80 I:1000 C:    300 Min:     10 Act: 2188 Avg: 1485 Max:    3306
+T: 1 (    3) P:80 I:1500 C:    288 Min:      4 Act: 1306 Avg: 1470 Max:    4470
+--- msglat msg
+RT:0 (    1) P:80 I:1000 C:   1000 Min:     11 Act:     54 Avg:     46 Max:    2425
+OW:0 (    1) P:80 I:1000 C:   1000 Min:      4 Act:     22 Avg:     17 Max:     944
+--- msglat pulse
+OW:0 (    1) P:80 I:1000 C:   1001 Min:      4 Act:     51 Avg:     39 Max:     412
+--- msglat event
+OW:0 (    1) P:80 I:1000 C:   1001 Min:      0 Act:      0 Avg:   1103 Max:    4940
+--- msglat --pi    (server below client, spinner between, same CPU)
+RT:0 (    1) P:80 I:1000 C:    300 Min:     10 Act:     11 Avg:     18 Max:      54
+OW:0 (    1) P:80 I:1000 C:    300 Min:      4 Act:      5 Avg:      9 Max:      32
+--- msglat --no-pi (same, _NTO_CHF_FIXED_PRIORITY)
+RT:0 (    1) P:80 I:1000 C:    300 Min:      8 Act:      9 Avg:    868 Max:   20116
+OW:0 (    1) P:80 I:1000 C:    300 Min:      4 Act:      5 Avg:    863 Max:   20096
+=== run 3: 2 busy loops at priority 10
+--- cyclictest SCHED_FIFO p80
+T: 0 (    2) P:80 I:1000 C:    500 Min:      5 Act:  992 Avg: 1245 Max:    2044
+--- cyclictest SCHED_OTHER
+T: 0 (    2) P: 0 I:1000 C:    500 Min:     10 Act: 5282 Avg: 3694 Max:   12212
+=== other tools
+--- signaltest
+T: 0 (    2) P:80 C:    500 Min:     26 Act:   66 Avg:   53 Max:     245
+T: 1 (    3) P:80 C:    500 Min:     27 Act:  175 Avg:  796 Max:   13144
+--- ptsematest
+#1 -> #0, Min    8, Cur   18, Avg   30, Max  397
+--- sigwaittest
+#1 -> #0, Min   10, Cur   32, Avg   40, Max 2262
+--- pmqtest
+#1 -> #0, Min    7, Cur   13, Avg   25, Max  339
+--- pi_stress
+Total inversion performed: 87229
+Test Duration: 0 days, 0 hours, 0 minutes, 6 seconds
+--- pip_stress
+No inversion incurred
+--- hackbench
+Time: 8.282
+--- oslat
+    031 (us):	 18
+    032 (us):	 109 (including overflows)
+     Minimum:	 0 (us)
+     Average:	 1.092 (us)
+     Maximum:	 208 (us)
+     Max-Min:	 208 (us)
+    Duration:	 5.042 (sec)
+
+--- rt-migrate-test
+   Min: 76 us
+   Tot: 3114 us
+   Avg: 155 us
+

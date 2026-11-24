@@ -14,6 +14,7 @@
 #error "qnx-compat.h is for QNX only"
 #endif
 
+#include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -83,9 +84,14 @@ int pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *mask)
 
 /* ---- identity ---- */
 pid_t gettid(void);               /* QNX thread id (1-based within the process) */
-int sched_getcpu(void);           /* -1: QNX does not tell a thread which CPU it is on */
+int sched_getcpu(void);          /* -1: QNX does not tell a thread which CPU it is on */
 
-int qnx_num_cpus(void);           /* CPUs the kernel started with (system page) */
+int qnx_num_cpus(void);
+
+/* ---- QNX kernel timer period (the granularity of every timer and sleep) ---- */
+void setlinebuf(FILE *stream);
+long qnx_clock_period_ns(void);              /* kernel clock period, -1 on error (ClockPeriod() cannot be changed on the QEMU virt target: ENOTSUP) */
+           /* CPUs the kernel started with (system page) */
 
 #ifdef __cplusplus
 }

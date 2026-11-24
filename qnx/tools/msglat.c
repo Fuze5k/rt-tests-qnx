@@ -18,6 +18,8 @@
  * With --pi the server gets a lower priority than the client and a third thread at a
  * medium priority spins: the server must inherit the client's priority to reply in
  * time, which is what the QNX kernel does for MsgSend (no _NTO_CHF_FIXED_PRIORITY).
+ * --no-pi is the same set-up on a channel created with _NTO_CHF_FIXED_PRIORITY, so the
+ * server keeps its low priority and the spinner starves it: the contrast. Use -a0.
  */
 #include <errno.h>
 #include <getopt.h>
@@ -160,7 +162,7 @@ static void *server(void *arg)
 				continue;
 			if (mode == MODE_EVENT)
 				stats_add(&one_way, t - event_due_ns);
-			else
+			else if (buf.p.value.sival_ptr)	/* NULL = the client's stop pulse */
 				stats_add(&one_way, t - (int64_t)(intptr_t)buf.p.value.sival_ptr);
 			continue;
 		}
@@ -174,8 +176,14 @@ static void *spinner(void *arg)
 {
 	(void)arg;
 	pin_and_prioritise(prio - 10);
-	while (!stop)
-		;
+	/* bursts, so that an unbounded inversion shows as a delay and not as a hang */
+	while (!stop) {
+		int64_t until = now_ns() + 20000000LL;
+
+		while (!stop && now_ns() < until)
+			;
+		usleep(2000);
+	}
 	return NULL;
 }
 
@@ -210,6 +218,7 @@ static void usage(void)
 	       "  -q, --quiet         print only the summary\n"
 	       "      --pi            server below the client plus a spinning medium-priority\n"
 	       "                      thread: shows priority inheritance on MsgSend\n"
+	       "      --no-pi         same, with _NTO_CHF_FIXED_PRIORITY (no inheritance); use -a0\n"
 	       "  -?, --help\n");
 }
 
@@ -224,6 +233,7 @@ int main(int argc, char **argv)
 		{ "histogram", required_argument, NULL, 'h' },
 		{ "quiet", no_argument, NULL, 'q' },
 		{ "pi", no_argument, NULL, 'P' },
+		{ "no-pi", no_argument, NULL, 'N' },
 		{ "help", no_argument, NULL, '?' },
 		{ NULL, 0, NULL, 0 }
 	};
@@ -232,6 +242,7 @@ int main(int argc, char **argv)
 	struct sigevent ev;
 	timer_t timer = 0;
 	int c, coid, spinning = 0;
+	unsigned chan_flags = 0;
 	int64_t period;
 	struct msg m;
 
@@ -256,6 +267,7 @@ int main(int argc, char **argv)
 		case 'h': hist_max = atoi(optarg) > 0 ? atoi(optarg) : HIST_MAX_DEFAULT; break;
 		case 'q': quiet = 1; break;
 		case 'P': pi_test = 1; break;
+		case 'N': pi_test = 1; chan_flags = _NTO_CHF_FIXED_PRIORITY; break;
 		default: usage(); return c == '?' ? 0 : 2;
 		}
 	}
@@ -264,7 +276,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	if (pi_test && mode != MODE_MSG) {
-		fprintf(stderr, "msglat: --pi needs --mode=msg\n");
+		fprintf(stderr, "msglat: --pi/--no-pi need --mode=msg\n");
 		return 2;
 	}
 
@@ -273,7 +285,7 @@ int main(int argc, char **argv)
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
 
-	chid = ChannelCreate(0);
+	chid = ChannelCreate(chan_flags);
 	if (chid == -1) {
 		perror("ChannelCreate");
 		return 1;
@@ -305,6 +317,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	printf("# QNX clock period: %ld us\n", qnx_clock_period_ns() / 1000);
 	printf("# msglat V 0.1: mode=%s, client prio %d, server prio %d, interval %ld us\n",
 	       mode == MODE_MSG ? "msg" : mode == MODE_PULSE ? "pulse" : "event", prio,
 	       pi_test ? prio - 20 : prio + 1, interval_us);

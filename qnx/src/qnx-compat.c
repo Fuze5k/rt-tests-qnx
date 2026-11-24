@@ -2,9 +2,11 @@
 /*
  * qnx-compat.c - Linux affinity and thread-id calls on top of QNX's run mask.
  *
- * The run mask is set with ThreadCtl()/ThreadCtlExt(): a struct _thread_runmask
- * followed by `size` words of run mask and, for the _INHERIT command, `size`
- * words of inherit mask (what threads created later start with).
+ * The run mask is set with ThreadCtlExt(_NTO_TCTL_RUNMASK_GET_AND_SET_INHERIT):
+ * a struct _thread_runmask followed by `size` words of run mask and `size` words
+ * of inherit mask (what threads created later start with). The old masks come
+ * back in the same buffer; an all-zero buffer therefore only reads. (The plain
+ * _NTO_TCTL_RUNMASK_GET_AND_SET takes a single word, not this layout.)
  */
 #include <errno.h>
 #include <unistd.h>
@@ -39,7 +41,7 @@ int sched_getcpu(void)
 }
 
 /* One ThreadCtlExt() call. buf layout: [size][runmask * size][inherit * size]. */
-static int runmask_ctl(int tid, int cmd, const cpu_set_t *set, int inherit, unsigned *old_out)
+static int runmask_ctl(int tid, const cpu_set_t *set, int inherit, unsigned *old_out)
 {
 	int ncpu = qnx_num_cpus();
 	int words = RMSK_SIZE(ncpu);
@@ -64,7 +66,7 @@ static int runmask_ctl(int tid, int cmd, const cpu_set_t *set, int inherit, unsi
 		return EINVAL;
 	}
 have_cpu:
-	rc = ThreadCtlExt(0, tid, cmd, buf);
+	rc = ThreadCtlExt(0, tid, _NTO_TCTL_RUNMASK_GET_AND_SET_INHERIT, buf);
 	if (rc == -1)
 		return errno;
 	if (old_out)
@@ -75,9 +77,7 @@ have_cpu:
 static int set_affinity(int tid, int process_wide, size_t size, const cpu_set_t *mask)
 {
 	(void)size;
-	return runmask_ctl(tid, process_wide ? _NTO_TCTL_RUNMASK_GET_AND_SET_INHERIT
-					     : _NTO_TCTL_RUNMASK_GET_AND_SET,
-			   mask, process_wide, NULL);
+	return runmask_ctl(tid, mask, process_wide, NULL);
 }
 
 static int get_affinity(int tid, size_t size, cpu_set_t *mask)
@@ -86,7 +86,7 @@ static int get_affinity(int tid, size_t size, cpu_set_t *mask)
 	int ncpu = qnx_num_cpus(), rc;
 
 	/* a run mask of zero means "do not change it, just report it" */
-	rc = runmask_ctl(tid, _NTO_TCTL_RUNMASK_GET_AND_SET, NULL, 0, cur);
+	rc = runmask_ctl(tid, NULL, 0, cur);
 	if (rc)
 		return rc;
 	memset(mask, 0, size < sizeof(*mask) ? size : sizeof(*mask));
@@ -129,4 +129,15 @@ int pthread_setaffinity_np(pthread_t thread, size_t size, const cpu_set_t *mask)
 int pthread_getaffinity_np(pthread_t thread, size_t size, cpu_set_t *mask)
 {
 	return get_affinity((int)thread, size, mask);
+}
+
+#include <sys/neutrino.h>
+
+long qnx_clock_period_ns(void)
+{
+	struct _clockperiod cp;
+
+	if (ClockPeriod(CLOCK_REALTIME, NULL, &cp, 0) == -1)
+		return -1;
+	return cp.nsec;
 }
